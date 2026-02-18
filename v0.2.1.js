@@ -352,6 +352,54 @@
     }
   }
 
+  // --- Class detection ---
+
+  /**
+   * Detect wrapper and slide classes from the container's existing class
+   * naming convention. E.g. container "card-slider" → wrapper
+   * "card-slider_list", slides "card-slider_slide".
+   *
+   * Returns { wrapperClass, slideClass } or null if using Swiper defaults.
+   */
+  function detectClasses(el) {
+    var wrapper = el.firstElementChild;
+    if (!wrapper) {
+      warn("No child element found as wrapper:", el);
+      return null;
+    }
+
+    // Try each container class to find one whose _list child exists
+    var classes = el.classList;
+    for (var i = 0; i < classes.length; i++) {
+      var base = classes[i];
+      var listClass = base + "_list";
+      var slideClass = base + "_slide";
+
+      if (wrapper.classList.contains(listClass)) {
+        log("Detected class convention: base=" + base + ", wrapper=" + listClass + ", slide=" + slideClass);
+        return { wrapperClass: listClass, slideClass: slideClass };
+      }
+    }
+
+    // No convention found — check if standard swiper classes are present
+    if (wrapper.classList.contains("swiper-wrapper")) {
+      return null; // Swiper defaults will work
+    }
+
+    // Fallback: use the first child as wrapper by its first class
+    var wrapperCls = wrapper.classList[0];
+    var firstSlide = wrapper.firstElementChild;
+    var slideCls = firstSlide ? firstSlide.classList[0] : null;
+
+    if (wrapperCls && slideCls) {
+      log("Fallback class detection: wrapper=" + wrapperCls + ", slide=" + slideCls);
+      return { wrapperClass: wrapperCls, slideClass: slideCls };
+    }
+
+    warn("Could not detect wrapper/slide classes for:", el);
+    return null;
+  }
+
   // --- Initialization ---
 
   function init() {
@@ -372,6 +420,9 @@
         warn("Empty se-swiper-instances name, skipping:", el);
         continue;
       }
+
+      // Detect wrapper/slide classes from existing DOM convention
+      var classInfo = detectClasses(el);
 
       // Parse config from attributes
       var userConfig = parseAttributes(el);
@@ -418,6 +469,12 @@
             );
           }
         }
+      }
+
+      // Merge detected class names into config
+      if (classInfo) {
+        config.wrapperClass = classInfo.wrapperClass;
+        config.slideClass = classInfo.slideClass;
       }
 
       log('Instance "' + name + '" final config:', config);
