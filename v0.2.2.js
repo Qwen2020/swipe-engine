@@ -91,6 +91,7 @@
     "parallax",
     "slides-per-view",
     "slides-per-group",
+    "allow-touch-move",
   ];
 
   /**
