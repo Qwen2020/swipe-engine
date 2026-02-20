@@ -403,7 +403,7 @@
 
   // --- Initialization ---
 
-  function init() {
+function init() {
     log("Initializing...");
 
     // 1. Collect controls
@@ -429,11 +429,38 @@
       var userConfig = parseAttributes(el);
       log('Instance "' + name + '" raw config:', userConfig);
 
-      // Apply defaults
+      // --- Accessibility & Base Defaults ---
       var config = Object.assign(
-        { slidesPerView: "auto", spaceBetween: 0 },
+        { 
+          slidesPerView: "auto", 
+          spaceBetween: 0,
+          // Enable Swiper's internal A11y module
+          a11y: {
+            enabled: true,
+            containerRoleDescriptionMessage: 'Carousel',
+            itemRoleDescriptionMessage: 'Slide',
+            prevSlideMessage: 'Previous slide',
+            nextSlideMessage: 'Next slide',
+            firstSlideMessage: 'This is the first slide',
+            lastSlideMessage: 'This is the last slide',
+            paginationBulletMessage: 'Go to slide {{index}}',
+          }
+        },
         userConfig
       );
+
+      // --- Fix ARIA Role Mismatch ---
+      // Webflow defaults Collection Lists to role="list". 
+      // Swiper slides use role="group". To satisfy Lighthouse, we change the 
+      // container to role="region" so it's no longer a "Strict List".
+      el.setAttribute('role', 'region');
+      el.setAttribute('aria-label', name + ' carousel');
+      
+      var wrapperEl = el.querySelector('[class*="_list"], .swiper-wrapper');
+      if (wrapperEl) {
+        // Removing role="list" prevents the requirement for role="listitem"
+        wrapperEl.setAttribute('role', 'presentation');
+      }
 
       // Wire pagination/scrollbar from controls
       var instanceControls = controlMap[name] || [];
@@ -443,17 +470,12 @@
 
         if (ctrl.type === "pagination") {
           if (!registry[name] || !registry[name].swipers.length) {
-            // First swiper for this name gets the pagination el
             config.pagination = Object.assign({}, config.pagination || {}, {
               el: ctrl.el,
               clickable: true,
             });
           } else {
-            warn(
-              'Pagination control for "' +
-                name +
-                '" bound to first instance only'
-            );
+            warn('Pagination control for "' + name + '" bound to first instance only');
           }
         }
 
@@ -463,11 +485,7 @@
               el: ctrl.el,
             });
           } else {
-            warn(
-              'Scrollbar control for "' +
-                name +
-                '" bound to first instance only'
-            );
+            warn('Scrollbar control for "' + name + '" bound to first instance only');
           }
         }
       }
@@ -487,7 +505,6 @@
       if (!registry[name]) {
         registry[name] = { swipers: [], controls: instanceControls };
       } else {
-        // Merge controls if not already set (multi-instance sharing a name)
         if (!registry[name].controls.length) {
           registry[name].controls = instanceControls;
         }
@@ -507,18 +524,11 @@
     // 4. Warn about orphaned controls
     for (var target in controlMap) {
       if (!registry[target]) {
-        warn(
-          'Orphaned controls targeting "' +
-            target +
-            '" — no matching swiper instance found'
-        );
+        warn('Orphaned controls targeting "' + target + '" — no matching swiper instance found');
       }
     }
 
-    log(
-      "Initialization complete. Instances:",
-      Object.keys(registry).length
-    );
+    log("Initialization complete. Instances:", Object.keys(registry).length);
   }
 
   // --- Public API ---
