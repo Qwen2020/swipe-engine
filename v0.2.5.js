@@ -402,8 +402,9 @@
   }
 
   // --- Initialization ---
+// --- Initialization ---
 
-// --- Breakpoint Constants ---
+  // Define the Webflow Breakpoints
   var BREAKPOINTS = {
     'tablet': '(max-width: 991px)',
     'mobile-l': '(max-width: 767px)',
@@ -415,48 +416,50 @@
 
     var controlMap = collectControls();
     var containers = document.querySelectorAll("[se-swiper-instances]");
+    log("Found " + containers.length + " swiper container(s)");
 
     containers.forEach(function (el) {
       var name = el.getAttribute("se-swiper-instances");
-      var bpKey = el.getAttribute("se-breakpoint"); // e.g., "tablet"
-      
-      // If a breakpoint is specified, setup a listener
+      var bpKey = el.getAttribute("se-breakpoint"); // Get the se-breakpoint="mobile-l" attribute
+
+      // Logic: If a breakpoint is set, listen for media query changes
       if (bpKey && BREAKPOINTS[bpKey]) {
-        var mediaQuery = window.matchMedia(BREAKPOINTS[bpKey]);
-        
-        var handleBreakpoint = function(e) {
+        var mq = window.matchMedia(BREAKPOINTS[bpKey]);
+
+        var checkBreakpoint = function (e) {
           if (e.matches) {
-            // Screen is small enough: Initialize if not already running
+            // Screen matches breakpoint (e.g. is 767px or less)
             if (!registry[name]) {
-              createSwiperInstance(el, name, controlMap);
+              setupSingleInstance(el, name, controlMap);
             }
           } else {
-            // Screen is too large: Destroy if it exists
+            // Screen is larger than breakpoint
             if (registry[name]) {
               window.SwiperEngine.destroy(name);
             }
           }
         };
 
-        // Run once on load
-        handleBreakpoint(mediaQuery);
-        // Watch for resize/orientation change
-        mediaQuery.addEventListener('change', handleBreakpoint);
+        mq.addEventListener("change", checkBreakpoint);
+        checkBreakpoint(mq); // Run on page load
       } else {
-        // No breakpoint specified: Init normally
-        createSwiperInstance(el, name, controlMap);
+        // No breakpoint attribute? Init normally.
+        setupSingleInstance(el, name, controlMap);
       }
     });
 
-    log("Initialization phase complete.");
+    // 3. Bind control event listeners
+    for (var name in registry) {
+      bindControls(name, registry[name]);
+    }
+
+    log("Initialization complete.");
   }
 
-  /** * Extracted logic to create a single swiper instance 
-   * to avoid code duplication in the responsive listener.
-   */
-  function createSwiperInstance(el, name, controlMap) {
-    if (registry[name]) return; // Avoid double-init
-
+  // Helper to keep the init function clean
+  function setupSingleInstance(el, name, controlMap) {
+    if (registry[name]) return;
+    
     var classInfo = detectClasses(el);
     var userConfig = parseAttributes(el);
     
@@ -473,7 +476,51 @@
     if (wrapperEl) wrapperEl.setAttribute('role', 'presentation');
 
     var instanceControls = controlMap[name] || [];
-    instanceControls.forEach(function(ctrl) {
+    
+    // Wire pagination/scrollbar
+    for (var c = 0; c < instanceControls.length; c++) {
+      var ctrl = instanceControls[c];
+      if (ctrl.type === "pagination") {
+        config.pagination = Object.assign({}, config.pagination || {}, { el: ctrl.el, clickable: true });
+      }
+      if (ctrl.type === "scrollbar") {
+        config.scrollbar = Object.assign({}, config.scrollbar || {}, { el: ctrl.el });
+      }
+    }
+
+    if (classInfo) {
+      config.wrapperClass = classInfo.wrapperClass;
+      config.slideClass = classInfo.slideClass;
+    }
+
+    var swiper = new window.Swiper(el, config);
+    registry[name] = { swipers: [swiper], controls: instanceControls };
+  }
+  
+
+  /** * Extracted logic to create a single swiper instance 
+   * to avoid code duplication in the responsive listener.
+   */
+  function createSwiperInstance(el, name, controlMap) {
+    if (registry[name]) return; // Avoid double-init
+
+    var classInfo = detectClasses(el);
+    var userConfig = parseAttributes(el);
+
+    var config = Object.assign({
+      slidesPerView: "auto",
+      spaceBetween: 0,
+      a11y: { enabled: true }
+    }, userConfig);
+
+    el.setAttribute('role', 'region');
+    el.setAttribute('aria-label', name + ' carousel');
+
+    var wrapperEl = el.querySelector('[class*="_list"], .swiper-wrapper');
+    if (wrapperEl) wrapperEl.setAttribute('role', 'presentation');
+
+    var instanceControls = controlMap[name] || [];
+    instanceControls.forEach(function (ctrl) {
       if (ctrl.type === "pagination") config.pagination = { el: ctrl.el, clickable: true };
       if (ctrl.type === "scrollbar") config.scrollbar = { el: ctrl.el };
     });
@@ -485,56 +532,57 @@
 
     var swiper = new window.Swiper(el, config);
     registry[name] = { swipers: [swiper], controls: instanceControls };
-    
+
     bindControls(name, registry[name]);
     log('Instance "' + name + '" initialized.');
-  }}
+  }
+}
 
   // --- Public API ---
 
   window.SwiperEngine = {
-    getInstance: function (name) {
-      return registry[name] || null;
-    },
+  getInstance: function (name) {
+    return registry[name] || null;
+  },
 
-    update: function (name) {
-      var entry = registry[name];
-      if (!entry) {
-        warn('update(): no instance named "' + name + '"');
-        return;
-      }
-      for (var i = 0; i < entry.swipers.length; i++) {
-        entry.swipers[i].update();
-      }
-    },
+  update: function (name) {
+    var entry = registry[name];
+    if (!entry) {
+      warn('update(): no instance named "' + name + '"');
+      return;
+    }
+    for (var i = 0; i < entry.swipers.length; i++) {
+      entry.swipers[i].update();
+    }
+  },
 
-    updateAll: function () {
-      for (var name in registry) {
-        for (var i = 0; i < registry[name].swipers.length; i++) {
-          registry[name].swipers[i].update();
-        }
+  updateAll: function () {
+    for (var name in registry) {
+      for (var i = 0; i < registry[name].swipers.length; i++) {
+        registry[name].swipers[i].update();
       }
-    },
+    }
+  },
 
-    destroy: function (name) {
-      var entry = registry[name];
-      if (!entry) {
-        warn('destroy(): no instance named "' + name + '"');
-        return;
-      }
-      for (var i = 0; i < entry.swipers.length; i++) {
-        entry.swipers[i].destroy(true, true);
-      }
-      delete registry[name];
-      log('Destroyed instance "' + name + '"');
-    },
-  };
+  destroy: function (name) {
+    var entry = registry[name];
+    if (!entry) {
+      warn('destroy(): no instance named "' + name + '"');
+      return;
+    }
+    for (var i = 0; i < entry.swipers.length; i++) {
+      entry.swipers[i].destroy(true, true);
+    }
+    delete registry[name];
+    log('Destroyed instance "' + name + '"');
+  },
+};
 
-  // --- Boot ---
+// --- Boot ---
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
-  } else {
-    init();
-  }
-})();
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", init);
+} else {
+  init();
+}
+}) ();
