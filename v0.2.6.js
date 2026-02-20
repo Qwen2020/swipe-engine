@@ -401,6 +401,47 @@
     return null;
   }
 
+  // --- Public API ---
+  // (Paste this ABOVE the init function)
+  window.SwiperEngine = {
+    getInstance: function (name) {
+      return registry[name] || null;
+    },
+
+    update: function (name) {
+      var entry = registry[name];
+      if (!entry) {
+        warn('update(): no instance named "' + name + '"');
+        return;
+      }
+      for (var i = 0; i < entry.swipers.length; i++) {
+        entry.swipers[i].update();
+      }
+    },
+
+    updateAll: function () {
+      for (var name in registry) {
+        for (var i = 0; i < registry[name].swipers.length; i++) {
+          registry[name].swipers[i].update();
+        }
+      }
+    },
+
+    destroy: function (name) {
+      var entry = registry[name];
+      if (!entry) {
+        warn('destroy(): no instance named "' + name + '"');
+        return;
+      }
+      for (var i = 0; i < entry.swipers.length; i++) {
+        // This is the call that was failing
+        entry.swipers[i].destroy(true, true);
+      }
+      delete registry[name];
+      log('Destroyed instance "' + name + '"');
+    },
+  };
+
   // --- Initialization ---
 // --- Initialization ---
 
@@ -496,93 +537,13 @@
     var swiper = new window.Swiper(el, config);
     registry[name] = { swipers: [swiper], controls: instanceControls };
   }
-  
 
-  /** * Extracted logic to create a single swiper instance 
-   * to avoid code duplication in the responsive listener.
-   */
-  function createSwiperInstance(el, name, controlMap) {
-    if (registry[name]) return; // Avoid double-init
 
-    var classInfo = detectClasses(el);
-    var userConfig = parseAttributes(el);
+  // --- Boot ---
 
-    var config = Object.assign({
-      slidesPerView: "auto",
-      spaceBetween: 0,
-      a11y: { enabled: true }
-    }, userConfig);
-
-    el.setAttribute('role', 'region');
-    el.setAttribute('aria-label', name + ' carousel');
-
-    var wrapperEl = el.querySelector('[class*="_list"], .swiper-wrapper');
-    if (wrapperEl) wrapperEl.setAttribute('role', 'presentation');
-
-    var instanceControls = controlMap[name] || [];
-    instanceControls.forEach(function (ctrl) {
-      if (ctrl.type === "pagination") config.pagination = { el: ctrl.el, clickable: true };
-      if (ctrl.type === "scrollbar") config.scrollbar = { el: ctrl.el };
-    });
-
-    if (classInfo) {
-      config.wrapperClass = classInfo.wrapperClass;
-      config.slideClass = classInfo.slideClass;
-    }
-
-    var swiper = new window.Swiper(el, config);
-    registry[name] = { swipers: [swiper], controls: instanceControls };
-
-    bindControls(name, registry[name]);
-    log('Instance "' + name + '" initialized.');
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
   }
-}
-
-  // --- Public API ---
-
-  window.SwiperEngine = {
-  getInstance: function (name) {
-    return registry[name] || null;
-  },
-
-  update: function (name) {
-    var entry = registry[name];
-    if (!entry) {
-      warn('update(): no instance named "' + name + '"');
-      return;
-    }
-    for (var i = 0; i < entry.swipers.length; i++) {
-      entry.swipers[i].update();
-    }
-  },
-
-  updateAll: function () {
-    for (var name in registry) {
-      for (var i = 0; i < registry[name].swipers.length; i++) {
-        registry[name].swipers[i].update();
-      }
-    }
-  },
-
-  destroy: function (name) {
-    var entry = registry[name];
-    if (!entry) {
-      warn('destroy(): no instance named "' + name + '"');
-      return;
-    }
-    for (var i = 0; i < entry.swipers.length; i++) {
-      entry.swipers[i].destroy(true, true);
-    }
-    delete registry[name];
-    log('Destroyed instance "' + name + '"');
-  },
-};
-
-// --- Boot ---
-
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", init);
-} else {
-  init();
-}
-}) ();
+})(); // This closes the (function () { "use strict"; block correctly
