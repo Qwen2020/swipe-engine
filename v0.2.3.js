@@ -403,133 +403,92 @@
 
   // --- Initialization ---
 
-function init() {
+// --- Breakpoint Constants ---
+  var BREAKPOINTS = {
+    'tablet': '(max-width: 991px)',
+    'mobile-l': '(max-width: 767px)',
+    'mobile': '(max-width: 479px)'
+  };
+
+  function init() {
     log("Initializing...");
 
-    // 1. Collect controls
     var controlMap = collectControls();
-
-    // 2. Find and init all swiper instances
     var containers = document.querySelectorAll("[se-swiper-instances]");
-    log("Found " + containers.length + " swiper container(s)");
 
-    for (var i = 0; i < containers.length; i++) {
-      var el = containers[i];
+    containers.forEach(function (el) {
       var name = el.getAttribute("se-swiper-instances");
-
-      if (!name) {
-        warn("Empty se-swiper-instances name, skipping:", el);
-        continue;
-      }
-
-      // Detect wrapper/slide classes from existing DOM convention
-      var classInfo = detectClasses(el);
-
-      // Parse config from attributes
-      var userConfig = parseAttributes(el);
-      log('Instance "' + name + '" raw config:', userConfig);
-
-      // --- Accessibility & Base Defaults ---
-      var config = Object.assign(
-        { 
-          slidesPerView: "auto", 
-          spaceBetween: 0,
-          // Enable Swiper's internal A11y module
-          a11y: {
-            enabled: true,
-            containerRoleDescriptionMessage: 'Carousel',
-            itemRoleDescriptionMessage: 'Slide',
-            prevSlideMessage: 'Previous slide',
-            nextSlideMessage: 'Next slide',
-            firstSlideMessage: 'This is the first slide',
-            lastSlideMessage: 'This is the last slide',
-            paginationBulletMessage: 'Go to slide {{index}}',
-          }
-        },
-        userConfig
-      );
-
-      // --- Fix ARIA Role Mismatch ---
-      // Webflow defaults Collection Lists to role="list". 
-      // Swiper slides use role="group". To satisfy Lighthouse, we change the 
-      // container to role="region" so it's no longer a "Strict List".
-      el.setAttribute('role', 'region');
-      el.setAttribute('aria-label', name + ' carousel');
+      var bpKey = el.getAttribute("se-breakpoint"); // e.g., "tablet"
       
-      var wrapperEl = el.querySelector('[class*="_list"], .swiper-wrapper');
-      if (wrapperEl) {
-        // Removing role="list" prevents the requirement for role="listitem"
-        wrapperEl.setAttribute('role', 'presentation');
-      }
-
-      // Wire pagination/scrollbar from controls
-      var instanceControls = controlMap[name] || [];
-
-      for (var c = 0; c < instanceControls.length; c++) {
-        var ctrl = instanceControls[c];
-
-        if (ctrl.type === "pagination") {
-          if (!registry[name] || !registry[name].swipers.length) {
-            config.pagination = Object.assign({}, config.pagination || {}, {
-              el: ctrl.el,
-              clickable: true,
-            });
+      // If a breakpoint is specified, setup a listener
+      if (bpKey && BREAKPOINTS[bpKey]) {
+        var mediaQuery = window.matchMedia(BREAKPOINTS[bpKey]);
+        
+        var handleBreakpoint = function(e) {
+          if (e.matches) {
+            // Screen is small enough: Initialize if not already running
+            if (!registry[name]) {
+              createSwiperInstance(el, name, controlMap);
+            }
           } else {
-            warn('Pagination control for "' + name + '" bound to first instance only');
+            // Screen is too large: Destroy if it exists
+            if (registry[name]) {
+              window.SwiperEngine.destroy(name);
+            }
           }
-        }
+        };
 
-        if (ctrl.type === "scrollbar") {
-          if (!registry[name] || !registry[name].swipers.length) {
-            config.scrollbar = Object.assign({}, config.scrollbar || {}, {
-              el: ctrl.el,
-            });
-          } else {
-            warn('Scrollbar control for "' + name + '" bound to first instance only');
-          }
-        }
-      }
-
-      // Merge detected class names into config
-      if (classInfo) {
-        config.wrapperClass = classInfo.wrapperClass;
-        config.slideClass = classInfo.slideClass;
-      }
-
-      log('Instance "' + name + '" final config:', config);
-
-      // Instantiate Swiper
-      var swiper = new window.Swiper(el, config);
-
-      // Register
-      if (!registry[name]) {
-        registry[name] = { swipers: [], controls: instanceControls };
+        // Run once on load
+        handleBreakpoint(mediaQuery);
+        // Watch for resize/orientation change
+        mediaQuery.addEventListener('change', handleBreakpoint);
       } else {
-        if (!registry[name].controls.length) {
-          registry[name].controls = instanceControls;
-        }
+        // No breakpoint specified: Init normally
+        createSwiperInstance(el, name, controlMap);
       }
-      registry[name].swipers.push(swiper);
+    });
 
-      if (debug) {
-        el.setAttribute("data-se-debug", "initialized");
-      }
-    }
-
-    // 3. Bind control event listeners
-    for (var name in registry) {
-      bindControls(name, registry[name]);
-    }
-
-    // 4. Warn about orphaned controls
-    for (var target in controlMap) {
-      if (!registry[target]) {
-        warn('Orphaned controls targeting "' + target + '" — no matching swiper instance found');
-      }
-    }
-
-    log("Initialization complete. Instances:", Object.keys(registry).length);
+    log("Initialization phase complete.");
   }
+
+  /** * Extracted logic to create a single swiper instance 
+   * to avoid code duplication in the responsive listener.
+   */
+  function createSwiperInstance(el, name, controlMap) {
+    if (registry[name]) return; // Avoid double-init
+
+    var classInfo = detectClasses(el);
+    var userConfig = parseAttributes(el);
+    
+    var config = Object.assign({ 
+      slidesPerView: "auto", 
+      spaceBetween: 0,
+      a11y: { enabled: true }
+    }, userConfig);
+
+    el.setAttribute('role', 'region');
+    el.setAttribute('aria-label', name + ' carousel');
+    
+    var wrapperEl = el.querySelector('[class*="_list"], .swiper-wrapper');
+    if (wrapperEl) wrapperEl.setAttribute('role', 'presentation');
+
+    var instanceControls = controlMap[name] || [];
+    instanceControls.forEach(function(ctrl) {
+      if (ctrl.type === "pagination") config.pagination = { el: ctrl.el, clickable: true };
+      if (ctrl.type === "scrollbar") config.scrollbar = { el: ctrl.el };
+    });
+
+    if (classInfo) {
+      config.wrapperClass = classInfo.wrapperClass;
+      config.slideClass = classInfo.slideClass;
+    }
+
+    var swiper = new window.Swiper(el, config);
+    registry[name] = { swipers: [swiper], controls: instanceControls };
+    
+    bindControls(name, registry[name]);
+    log('Instance "' + name + '" initialized.');
+  }}
 
   // --- Public API ---
 
